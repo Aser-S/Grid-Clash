@@ -87,59 +87,68 @@ threading.Thread(target=broadcast_snapshots, daemon=True).start()
 # Listen for Client Messages
 # ======================================
 while True:  # msg_type: INIT=0, ACK=1, EVENT=2, FULL=3, DELTA=4, HEARTBEAT=5
-    data, clientAddress = serverSocket.recvfrom(1200)
+    try:
+        data, clientAddress = serverSocket.recvfrom(1200)
 
-    # Parse header
-    header = struct.unpack(HEADER_FORMAT, data[:HEADER_SIZE])
-    protocol_id, version, msg_type, snap_id, seq, timestamp, payload_len = header
+        # Parse header
+        header = struct.unpack(HEADER_FORMAT, data[:HEADER_SIZE])
+        protocol_id, version, msg_type, snap_id, seq, timestamp, payload_len = header
 
-    # Handle INIT (client connects)
-    if msg_type == 0:
-        clientNumber += 1
-        clients[clientAddress] = {'seq': 0, 'last_snapshot': 0, 'client number': clientNumber, 'last_ack': False}
-        print(f"[INIT] Client connected: {clientAddress}, Player #{clientNumber}")
-        # '!4sB B I I Q H' = protocol_id, version, msg_type, snapshot_id, seq_num, timestamp, payload_len
+        # Handle INIT (client connects)
+        if msg_type == 0:
+            clientNumber += 1
+            clients[clientAddress] = {'seq': 0, 'last_snapshot': 0, 'client number': clientNumber, 'last_ack': False}
+            print(f"[INIT] Client connected: {clientAddress}, Player #{clientNumber}")
+            # '!4sB B I I Q H' = protocol_id, version, msg_type, snapshot_id, seq_num, timestamp, payload_len
 
-        # Send ACK
-        response = struct.pack(HEADER_FORMAT, b'DOMX', 1, 1, 0, 0, int(time.time() * 1000), 0)
-        serverSocket.sendto(response, clientAddress)
+            # Send ACK
+            response = struct.pack(HEADER_FORMAT, b'DOMX', 1, 1, 0, 0, int(time.time() * 1000), 0)
+            serverSocket.sendto(response, clientAddress)
 
-        # Send FULL snapshot (msg_type=3)
-        initial_snapshot_payload = json.dumps(grid).encode()
-        payloadLen = len(initial_snapshot_payload)
+            # Send FULL snapshot (msg_type=3)
+            initial_snapshot_payload = json.dumps(grid).encode()
+            payloadLen = len(initial_snapshot_payload)
 
-        clients[clientAddress]['last_snapshot'] += 1
-        clients[clientAddress]['seq'] += 1
+            clients[clientAddress]['last_snapshot'] += 1
+            clients[clientAddress]['seq'] += 1
 
-        headers = struct.pack(
-            HEADER_FORMAT, b'DOMX', 1, 3,
-            clients[clientAddress]['last_snapshot'],
-            clients[clientAddress]['seq'],
-            int(time.time() * 1000), payloadLen
-        )
-        serverSocket.sendto(headers + initial_snapshot_payload, clientAddress)
+            headers = struct.pack(
+                HEADER_FORMAT, b'DOMX', 1, 3,
+                clients[clientAddress]['last_snapshot'],
+                clients[clientAddress]['seq'],
+                int(time.time() * 1000), payloadLen
+            )
+            serverSocket.sendto(headers + initial_snapshot_payload, clientAddress)
 
-    # Handle ACK
-    elif msg_type == 1:
+        # Handle ACK
+        elif msg_type == 1:
+            if clientAddress in clients:
+                clients[clientAddress]['last_ack'] = True
+                # print(f"[ACK] from {clientAddress}")
+
+        # Handle EVENT (ACQUIRE_CELL r c)
+        elif msg_type == 2:
+
+            modifiedFlag = True
+            payload = data[HEADER_SIZE:HEADER_SIZE + payload_len]
+            message = payload.decode()
+            print(f"[EVENT] From {clientAddress}: {message}")
+
+            parts = message.split()
+            if len(parts) == 3 and parts[0] == "ACQUIRE_CELL":
+                try:
+                    r, c = int(parts[1]), int(parts[2])
+                    player_num = clients[clientAddress]['client number']
+                    if 0 <= r < rows and 0 <= c < cols and grid[r][c] == 0:
+                        grid[r][c] = player_num
+                        print(f"Cell ({r},{c}) acquired by Player {player_num}")
+                except Exception as e:
+                    print(f"[ERROR] Invalid cell data: {e}")
+
+    except OSError as e:
+        # Handle connection errors gracefully (client disconnect, etc.)
         if clientAddress in clients:
-            clients[clientAddress]['last_ack'] = True
-            # print(f"[ACK] from {clientAddress}")
-
-    # Handle EVENT (ACQUIRE_CELL r c)
-    elif msg_type == 2:
-
-        modifiedFlag = True
-        payload = data[HEADER_SIZE:HEADER_SIZE + payload_len]
-        message = payload.decode()
-        print(f"[EVENT] From {clientAddress}: {message}")
-
-        parts = message.split()
-        if len(parts) == 3 and parts[0] == "ACQUIRE_CELL":
-            try:
-                r, c = int(parts[1]), int(parts[2])
-                player_num = clients[clientAddress]['client number']
-                if 0 <= r < rows and 0 <= c < cols and grid[r][c] == 0:
-                    grid[r][c] = player_num
-                    print(f"Cell ({r},{c}) acquired by Player {player_num}")
-            except Exception as e:
-                print(f"[ERROR] Invalid cell data: {e}")
+            print(f"[DISCONNECT] Client {clientAddress} (Player #{clients[clientAddress]['client number']}) disconnected")
+            del clients[clientAddress]
+    except Exception as e:
+        print(f"[ERROR] Unexpected error: {e}")

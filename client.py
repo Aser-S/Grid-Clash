@@ -27,7 +27,7 @@ frame.pack(pady=10)
 
 # 10x10 grid buttons
 GRID_SIZE = 10
-buttons = []
+buttons = [[None for _ in range(GRID_SIZE)] for _ in range(GRID_SIZE)]
 cell_owner = [[0 for _ in range(GRID_SIZE)] for _ in range(GRID_SIZE)]  # track ownership locally
 player_id = None  # optional (could be assigned by server)
 
@@ -60,13 +60,13 @@ def on_cell_click(r, c):
 
 # Create grid buttons
 for r in range(GRID_SIZE):
-    row = []
     for c in range(GRID_SIZE):
+        # Use default arguments in lambda to capture current values of r and c.
+        # This avoids late binding issues in Python closures within loops.
         b = tk.Button(frame, text=f"{r},{c}", width=5, height=2,
                       command=lambda r=r, c=c: on_cell_click(r, c))
         b.grid(row=r, column=c, padx=2, pady=2)
-        row.append(b)
-    buttons.append(row)
+        buttons[r][c] = b
 
 # ===================== NETWORKING =====================
 
