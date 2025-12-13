@@ -1,0 +1,23 @@
+========================================
+GRID CLASH TEST SUMMARY
+========================================
+
+Test Configuration:
+  Interface: lo
+  Clients: 2
+  Duration per scenario: 30s
+  Timestamp: 13 ديس, 2025 EET 01:46:39 م
+
+Scenarios Tested:
+  1. Baseline (no impairment)
+  2. Loss 2% (LAN-like)
+  3. Loss 5% (WAN-like)
+  4. Delay 100ms (WAN delay)
+
+Results Files:
+  - 20251213_134408_baseline_merged.csv: 540 records
+  - 20251213_134408_delay_100ms_merged.csv: 548 records
+  - 20251213_134408_loss_2pct_merged.csv: 565 records
+  - 20251213_134408_loss_5pct_merged.csv: 555 records
+
+========================================

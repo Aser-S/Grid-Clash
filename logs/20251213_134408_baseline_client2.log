@@ -1,0 +1,28 @@
+[Client 2] Sent INIT
+[Client 2] Connected to server
+[Client 2] Running for 30 seconds...
+[Client 2] Listen error: 0
+[Client 2] Auto-play error: 0
+[Client 2] Auto-play error: 0
+[Client 2] Auto-play error: 0
+[Client 2] Auto-play error: 0
+[Client 2] Auto-play error: 0
+[Client 2] Auto-play error: 0
+[Client 2] Auto-play error: 0
+[Client 2] Auto-play error: 0
+[Client 2] Auto-play error: 0
+[Client 2] Auto-play error: 0
+[Client 2] Auto-play error: 0
+[Client 2] Auto-play error: 0
+[Client 2] Auto-play error: 0
+[Client 2] Auto-play error: 0
+[Client 2] Auto-play error: 0
+[Client 2] Auto-play error: 0
+[CSV] Saved 260 metrics to /home/halofever/Grid_Clash/Grid-Clash/results/20251213_134408_baseline_client2.csv
+
+[Client 2] Test Summary:
+  Total packets: 260
+  Duration: 30.59 sec
+  Latency - Mean: 1.42 ms, Median: 1.00 ms, P95: 1.00 ms
+  Jitter - Mean: 1.27 ms, P95: 3.00 ms
+  Position Error - Mean: 0.0192, P95: 0.2000
