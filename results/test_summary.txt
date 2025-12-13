@@ -6,7 +6,7 @@ Test Configuration:
   Interface: lo
   Clients: 2
   Duration per scenario: 30s
-  Timestamp: 13 ديس, 2025 EET 03:00:52 م
+  Timestamp: 13 ديس, 2025 EET 04:49:48 م
 
 Scenarios Tested:
   1. Baseline (no impairment)
@@ -15,9 +15,9 @@ Scenarios Tested:
   4. Delay 100ms (WAN delay)
 
 Results Files:
-  - 20251213_145901_baseline_merged.csv: 494 records
-  - 20251213_145901_delay_100ms_merged.csv: 547 records
-  - 20251213_145901_loss_2pct_merged.csv: 471 records
-  - 20251213_145901_loss_5pct_merged.csv: 503 records
+  - 20251213_164749_baseline_merged.csv: 490 records
+  - 20251213_164749_delay_100ms_merged.csv: 550 records
+  - 20251213_164749_loss_2pct_merged.csv: 529 records
+  - 20251213_164749_loss_5pct_merged.csv: 490 records
 
 ========================================
