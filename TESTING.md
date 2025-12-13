@@ -122,6 +122,15 @@ Grid-Clash/
 │   ├── scenario_comparison.csv
 │   ├── analysis_report.txt
 │   └── test_summary.txt
+├── server_metrics/
+│   ├── game_metrics_YYYYMMDD_HHMMSS.csv
+│   ├── authoritative_positions_YYYYMMDD_HHMMSS.csv
+│   └── ...
+├── pcaps/
+│   ├── YYYYMMDD_HHMMSS_baseline.pcap
+│   ├── YYYYMMDD_HHMMSS_loss_2pct.pcap
+│   ├── YYYYMMDD_HHMMSS_loss_5pct.pcap
+│   └── YYYYMMDD_HHMMSS_delay_100ms.pcap
 ├── logs/
 │   ├── YYYYMMDD_HHMMSS_baseline_server.log
 │   ├── YYYYMMDD_HHMMSS_baseline_client1.log
@@ -134,6 +143,25 @@ Grid-Clash/
     ├── bandwidth_comparison.png
     └── latency_timeline_*.png
 ```
+
+**Note:** The test runner automatically cleans up all previous test artifacts (logs, pcaps, results, server_metrics, plots) before starting a new test run.
+
+## Packet Capture (pcaps)
+
+The test runner automatically captures packet traces for each scenario using tcpdump. These pcap files can be analyzed with Wireshark or tshark:
+
+```bash
+# View pcap summary
+tshark -r pcaps/YYYYMMDD_HHMMSS_baseline.pcap -q -z io,stat,1
+
+# Filter by port 12000 (server port)
+tshark -r pcaps/YYYYMMDD_HHMMSS_loss_2pct.pcap -Y "udp.port == 12000"
+
+# Open in Wireshark
+wireshark pcaps/YYYYMMDD_HHMMSS_delay_100ms.pcap
+```
+
+Note: tcpdump requires root privileges. The test runner runs with sudo.
 
 ## Analysis Report Format
 

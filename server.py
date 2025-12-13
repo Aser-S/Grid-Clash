@@ -51,8 +51,12 @@ import struct
 import json
 import csv
 import psutil
+import os
 from collections import defaultdict
 from datetime import datetime
+
+# Output directory for metrics CSV files (can be set via METRICS_OUTPUT_DIR env var)
+METRICS_OUTPUT_DIR = os.environ.get('METRICS_OUTPUT_DIR', '.')
 
 serverPort = 12000
 # socket.AF_INET – Address Family for IPv4. 
@@ -95,6 +99,25 @@ modifiedFlag = True  # Tracks if the grid was modified
 # Message type name mapping
 MSG_TYPE_NAMES = {0: 'INIT', 1: 'ACK', 2: 'EVENT', 3: 'FULL', 4: 'DELTA', 5: 'HEARTBEAT', 6: 'GAME_OVER'}
 
+# Server CPU monitoring - initialize process and prime cpu_percent
+server_process = psutil.Process()
+server_process.cpu_percent()  # Prime the call (first call always returns 0)
+
+# Authoritative position log (Section 6 compliance)
+authoritative_positions = []  # [(timestamp_ms, grid_state), ...]
+
+
+# ======================================
+# Helper Function: Log Authoritative Position
+# ======================================
+def log_authoritative_position(timestamp_ms, grid_state):
+    """Log server's authoritative position with timestamp (Section 6)."""
+    global authoritative_positions
+    authoritative_positions.append((timestamp_ms, [row[:] for row in grid_state]))
+    # Keep only last 1000 positions
+    if len(authoritative_positions) > 1000:
+        authoritative_positions.pop(0)
+
 
 # ======================================
 # Helper Function: Log Metrics for All Packets
@@ -115,15 +138,23 @@ def log_packet_metrics(client_id, msg_type, snapshot_id, seq_num, server_timesta
             prev_inter_arrival = client_recv_times[client_id][-1] - client_recv_times[client_id][-2]
             jitter = abs(inter_arrival - prev_inter_arrival)
     
-    # Calculate perceived position error
+    # Calculate perceived position error based on latency variance
     perceived_error = 0
     if client_id in client_latencies and len(client_latencies[client_id]) >= 2:
         recent_latencies = client_latencies[client_id][-5:]
         if len(recent_latencies) >= 2:
             latency_variance = max(recent_latencies) - min(recent_latencies)
-            perceived_error = min(latency_variance / 10.0, 100.0)
+            # Scale: 10ms variance = 1 unit of position error
+            perceived_error = min(latency_variance / 10.0, 10.0)
     
-    cpu_usage = psutil.cpu_percent()
+    # Get CPU usage (properly measured - using primed process)
+    try:
+        process_cpu = server_process.cpu_percent()
+        system_cpu = psutil.cpu_percent()
+        cpu_usage = max(process_cpu, system_cpu)
+    except:
+        cpu_usage = psutil.cpu_percent()
+    
     bandwidth_kbps = (packet_size * 8 * frequency) / 1024 if packet_size > 0 else 0
     
     # Track times for this client
@@ -153,7 +184,10 @@ def log_packet_metrics(client_id, msg_type, snapshot_id, seq_num, server_timesta
 def save_metrics_to_csv():
     """Save all collected metrics to a CSV file."""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"game_metrics_{timestamp}.csv"
+    filename = os.path.join(METRICS_OUTPUT_DIR, f"game_metrics_{timestamp}.csv")
+    
+    # Ensure output directory exists
+    os.makedirs(METRICS_OUTPUT_DIR, exist_ok=True)
     
     try:
         with open(filename, 'w', newline='') as csvfile:
@@ -172,6 +206,40 @@ def save_metrics_to_csv():
         return filename
     except Exception as e:
         print(f"[ERROR] Failed to save CSV: {e}")
+        return None
+
+
+def save_authoritative_positions():
+    """Save authoritative positions to a CSV file for Section 6 position error analysis."""
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = os.path.join(METRICS_OUTPUT_DIR, f"authoritative_positions_{timestamp}.csv")
+    
+    # Ensure output directory exists
+    os.makedirs(METRICS_OUTPUT_DIR, exist_ok=True)
+    
+    try:
+        with open(filename, 'w', newline='') as csvfile:
+            fieldnames = ['timestamp_ms', 'row', 'col', 'player']
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writeheader()
+            
+            for entry in authoritative_positions:
+                ts = entry['timestamp_ms']
+                grid_state = entry['grid']
+                for r, row in enumerate(grid_state):
+                    for c, cell in enumerate(row):
+                        if cell > 0:
+                            writer.writerow({
+                                'timestamp_ms': ts,
+                                'row': r,
+                                'col': c,
+                                'player': cell
+                            })
+        
+        print(f"[CSV] Authoritative positions saved to {filename}")
+        return filename
+    except Exception as e:
+        print(f"[ERROR] Failed to save authoritative positions: {e}")
         return None
 
 
@@ -241,6 +309,11 @@ def broadcast_game_over():
     csv_file = save_metrics_to_csv()
     if csv_file:
         print(f"[SERVER] Game data saved successfully!")
+    
+    # Save authoritative positions for Section 6 analysis
+    pos_file = save_authoritative_positions()
+    if pos_file:
+        print(f"[SERVER] Authoritative positions saved!")
 
 
 # ======================================
@@ -496,6 +569,9 @@ while True:  # msg_type: INIT=0, ACK=1, EVENT=2, FULL=3, DELTA=4, HEARTBEAT=5, G
                         grid[r][c] = player_num
                         numberOfClicks += 1
                         print(f"Cell ({r},{c}) acquired by Player {player_num}")
+                        
+                        # Log authoritative position for Section 6 position error calculation
+                        log_authoritative_position(int(time.time() * 1000), grid)
                         
                         # Check if game is over (grid is full)
                         if numberOfClicks >= (rows * cols):

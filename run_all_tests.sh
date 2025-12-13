@@ -31,6 +31,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RESULTS_DIR="${SCRIPT_DIR}/results"
 LOGS_DIR="${SCRIPT_DIR}/logs"
 PLOTS_DIR="${SCRIPT_DIR}/plots"
+PCAPS_DIR="${SCRIPT_DIR}/pcaps"
+SERVER_METRICS_DIR="${SCRIPT_DIR}/server_metrics"
 
 # Default values
 DEFAULT_INTERFACE="lo"
@@ -131,6 +133,88 @@ setup_directories() {
     mkdir -p "$RESULTS_DIR" 2>/dev/null || true
     mkdir -p "$LOGS_DIR" 2>/dev/null || true
     mkdir -p "$PLOTS_DIR" 2>/dev/null || true
+    mkdir -p "$PCAPS_DIR" 2>/dev/null || true
+    mkdir -p "$SERVER_METRICS_DIR" 2>/dev/null || true
+}
+
+cleanup_previous_test() {
+    print_info "Cleaning up previous test artifacts..."
+    
+    # Clear logs
+    if [ -d "$LOGS_DIR" ] && [ "$(ls -A $LOGS_DIR 2>/dev/null)" ]; then
+        rm -f "${LOGS_DIR}"/* 2>/dev/null || true
+        print_info "  Cleared logs/"
+    fi
+    
+    # Clear pcaps
+    if [ -d "$PCAPS_DIR" ] && [ "$(ls -A $PCAPS_DIR 2>/dev/null)" ]; then
+        rm -f "${PCAPS_DIR}"/* 2>/dev/null || true
+        print_info "  Cleared pcaps/"
+    fi
+    
+    # Clear results
+    if [ -d "$RESULTS_DIR" ] && [ "$(ls -A $RESULTS_DIR 2>/dev/null)" ]; then
+        rm -f "${RESULTS_DIR}"/* 2>/dev/null || true
+        print_info "  Cleared results/"
+    fi
+    
+    # Clear server_metrics
+    if [ -d "$SERVER_METRICS_DIR" ] && [ "$(ls -A $SERVER_METRICS_DIR 2>/dev/null)" ]; then
+        rm -f "${SERVER_METRICS_DIR}"/* 2>/dev/null || true
+        print_info "  Cleared server_metrics/"
+    fi
+    
+    # Clear plots
+    if [ -d "$PLOTS_DIR" ] && [ "$(ls -A $PLOTS_DIR 2>/dev/null)" ]; then
+        rm -f "${PLOTS_DIR}"/* 2>/dev/null || true
+        print_info "  Cleared plots/"
+    fi
+    
+    # Clear any stray game_metrics*.csv and authoritative_positions*.csv in root
+    rm -f "${SCRIPT_DIR}"/game_metrics_*.csv 2>/dev/null || true
+    rm -f "${SCRIPT_DIR}"/authoritative_positions_*.csv 2>/dev/null || true
+}
+
+# ===================== PCAP CAPTURE =====================
+TCPDUMP_PID=""
+
+start_pcap_capture() {
+    local pcap_file="$1"
+    
+    # Check if tcpdump is available
+    if ! command -v tcpdump &> /dev/null; then
+        print_warn "tcpdump not installed. Skipping pcap capture."
+        print_info "Install with: sudo apt-get install tcpdump"
+        return 1
+    fi
+    
+    print_info "Starting packet capture to $pcap_file"
+    tcpdump -i "$INTERFACE" -w "$pcap_file" port $SERVER_PORT 2>/dev/null &
+    TCPDUMP_PID=$!
+    sleep 1
+    
+    if kill -0 $TCPDUMP_PID 2>/dev/null; then
+        print_info "Packet capture started (PID: $TCPDUMP_PID)"
+        return 0
+    else
+        print_warn "Failed to start packet capture"
+        TCPDUMP_PID=""
+        return 1
+    fi
+}
+
+stop_pcap_capture() {
+    if [ -n "$TCPDUMP_PID" ]; then
+        print_info "Stopping packet capture..."
+        kill -TERM $TCPDUMP_PID 2>/dev/null || true
+        # Give it 2 seconds to exit gracefully
+        sleep 2
+        # Force kill if still running
+        if kill -0 $TCPDUMP_PID 2>/dev/null; then
+            kill -KILL $TCPDUMP_PID 2>/dev/null || true
+        fi
+        TCPDUMP_PID=""
+    fi
 }
 
 cleanup_netem() {
@@ -166,9 +250,9 @@ start_server() {
     pkill -f "python3.*server.py" 2>/dev/null || true
     sleep 1
     
-    # Start server in background
+    # Start server in background with metrics output directory
     cd "$SCRIPT_DIR"
-    python3 server.py > "$log_file" 2>&1 &
+    METRICS_OUTPUT_DIR="$SERVER_METRICS_DIR" python3 server.py > "$log_file" 2>&1 &
     SERVER_PID=$!
     
     print_info "Server started (PID: $SERVER_PID)"
@@ -185,8 +269,14 @@ stop_server() {
     print_info "Stopping server..."
     
     if [ -n "$SERVER_PID" ]; then
-        kill $SERVER_PID 2>/dev/null || true
-        wait $SERVER_PID 2>/dev/null || true
+        kill -TERM $SERVER_PID 2>/dev/null || true
+        # Give it 2 seconds to exit gracefully
+        sleep 2
+        # Force kill if still running
+        if kill -0 $SERVER_PID 2>/dev/null; then
+            kill -KILL $SERVER_PID 2>/dev/null || true
+        fi
+        SERVER_PID=""
     fi
     
     # Ensure all server processes are stopped
@@ -260,9 +350,13 @@ run_scenario() {
     print_header "SCENARIO: $scenario_name"
     
     local server_log="${LOGS_DIR}/${output_prefix}_server.log"
+    local pcap_file="${PCAPS_DIR}/${output_prefix}.pcap"
     
     # Apply network impairment
     apply_netem "$netem_rule" "$scenario_name"
+    
+    # Start packet capture
+    start_pcap_capture "$pcap_file"
     
     # Start server
     start_server "$server_log"
@@ -275,6 +369,9 @@ run_scenario() {
     
     # Stop server
     stop_server
+    
+    # Stop packet capture
+    stop_pcap_capture
     
     # Merge results
     merge_results "$scenario_name" "$output_prefix"
@@ -341,6 +438,9 @@ main() {
     check_dependencies
     detect_interface
     setup_directories
+    
+    # Clean up artifacts from previous test runs
+    cleanup_previous_test
     
     # Clean up any leftover processes
     cleanup_netem
