@@ -25,6 +25,7 @@ import argparse
 import sys
 import os
 import random
+import psutil
 from datetime import datetime
 from collections import deque
 
@@ -72,15 +73,18 @@ class MetricsCollector:
         self.display_delay_ms = 50  # Client displays with 50ms lag for smoothing
         self.last_displayed_grid = None
         
-        # CPU monitoring - prime the CPU percent call
+        # CPU monitoring - prime the CPU percent calls
+        self.process = None
+        self.last_cpu_value = 0
+        self.cpu_sample_count = 0
         try:
             import psutil
             self.process = psutil.Process()
-            self.process.cpu_percent()  # Prime the call (first call always returns 0)
-            self.system_cpu_percent = psutil.cpu_percent  # For system-wide CPU
-        except:
+            # Prime with a blocking call to get initial baseline
+            self.last_cpu_value = psutil.cpu_percent(interval=0.1)
+        except Exception as e:
+            print(f"[WARN] CPU monitoring init failed: {e}")
             self.process = None
-            self.system_cpu_percent = lambda: 0
         
     def record_packet(self, msg_type, snapshot_id, seq_num, server_timestamp_ms, 
                       recv_time_ms, packet_size, grid_data=None):
@@ -105,18 +109,25 @@ class MetricsCollector:
         self.packet_times.append(recv_time_ms / 1000.0)  # Convert to seconds
         bandwidth_kbps = self._calculate_bandwidth()
         
-        # Get CPU usage (properly measured)
-        cpu_percent = 0
+        # Get CPU usage (system-wide, 0-100%)
+        cpu_percent = self.last_cpu_value
         try:
-            if self.process:
-                # Get process CPU (now properly primed)
-                process_cpu = self.process.cpu_percent()
-                # Also get system CPU for comparison
-                system_cpu = self.system_cpu_percent()
-                # Use the higher of the two for more meaningful metrics
-                cpu_percent = max(process_cpu, system_cpu)
-        except:
-            cpu_percent = 0
+           
+            self.cpu_sample_count += 1
+            # Every 10th packet, do a proper measurement with interval
+            if self.cpu_sample_count % 10 == 0:
+                cpu_percent = psutil.cpu_percent(interval=0.05)
+            else:
+                # Non-blocking call returns delta since last call
+                cpu_percent = psutil.cpu_percent(interval=None)
+            
+            # Only update if we got a non-zero value
+            if cpu_percent > 0:
+                self.last_cpu_value = cpu_percent
+            else:
+                cpu_percent = self.last_cpu_value
+        except Exception as e:
+            cpu_percent = self.last_cpu_value
         
         # Store the metric
         metric = {

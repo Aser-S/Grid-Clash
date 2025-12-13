@@ -67,7 +67,8 @@ serverSocket.bind(('', serverPort))
 
 print(f"Server Started on port number {serverPort}")
 
-frequency = 20
+# Target 20 Hz, slight overclock to 21 Hz to compensate for system scheduling overhead
+frequency = 21
 TICK_INTERVAL = 1 / frequency
 
 clients = {}  # Track connected clients
@@ -99,9 +100,10 @@ modifiedFlag = True  # Tracks if the grid was modified
 # Message type name mapping
 MSG_TYPE_NAMES = {0: 'INIT', 1: 'ACK', 2: 'EVENT', 3: 'FULL', 4: 'DELTA', 5: 'HEARTBEAT', 6: 'GAME_OVER'}
 
-# Server CPU monitoring - initialize process and prime cpu_percent
+# Server CPU monitoring - initialize and prime cpu_percent
 server_process = psutil.Process()
-server_process.cpu_percent()  # Prime the call (first call always returns 0)
+last_server_cpu = psutil.cpu_percent(interval=0.1)  # Prime with blocking call
+server_cpu_sample_count = 0
 
 # Authoritative position log (Section 6 compliance)
 authoritative_positions = []  # [(timestamp_ms, grid_state), ...]
@@ -147,13 +149,23 @@ def log_packet_metrics(client_id, msg_type, snapshot_id, seq_num, server_timesta
             # Scale: 10ms variance = 1 unit of position error
             perceived_error = min(latency_variance / 10.0, 10.0)
     
-    # Get CPU usage (properly measured - using primed process)
+    # Get CPU usage (system-wide, 0-100%)
+    global server_cpu_sample_count, last_server_cpu
     try:
-        process_cpu = server_process.cpu_percent()
-        system_cpu = psutil.cpu_percent()
-        cpu_usage = max(process_cpu, system_cpu)
+        server_cpu_sample_count += 1
+        # Every 10th call, do a proper measurement with small interval
+        if server_cpu_sample_count % 10 == 0:
+            cpu_usage = psutil.cpu_percent(interval=0.05)
+        else:
+            cpu_usage = psutil.cpu_percent(interval=None)
+        
+        # Keep last known good value
+        if cpu_usage > 0:
+            last_server_cpu = cpu_usage
+        else:
+            cpu_usage = last_server_cpu
     except:
-        cpu_usage = psutil.cpu_percent()
+        cpu_usage = last_server_cpu
     
     bandwidth_kbps = (packet_size * 8 * frequency) / 1024 if packet_size > 0 else 0
     
@@ -323,8 +335,11 @@ def broadcast_snapshots():
     """Periodically broadcast current game state to all clients."""
     global modifiedFlag, snapshot_id
     
+    next_tick_time = time.time()
+    
     while not gameOver:
-       
+        next_tick_time += TICK_INTERVAL
+        
         # Only send snapshots if there are connected clients
         if len(clients) > 0:
             # Only increment snapshot ID once per broadcast cycle (represents new state)
@@ -423,7 +438,11 @@ def broadcast_snapshots():
 
         # Reset modification flag after broadcasting to all clients
         modifiedFlag = False
-        time.sleep(TICK_INTERVAL)
+        
+        # Sleep until next tick (accounting for processing time)
+        sleep_time = next_tick_time - time.time()
+        if sleep_time > 0:
+            time.sleep(sleep_time)
 
 
 # Start broadcasting in a background thread

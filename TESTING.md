@@ -97,8 +97,9 @@ sudo ./netem_clear.sh lo
 # Run all scenarios (loopback, 2 clients, 30 seconds each)
 sudo ./run_all_tests.sh lo 2 30
 
-# Run on a real network interface
-sudo ./run_all_tests.sh eth0 4 60
+# Run on a real network interface (use 'ip link show' to find yours)
+# Common names: enp0s3, enp0s8, eth0, ens33
+sudo ./run_all_tests.sh enp0s3 4 60
 ```
 
 ### Analyzing Results

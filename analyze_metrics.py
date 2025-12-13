@@ -125,37 +125,42 @@ def analyze_scenario(metrics):
         msg_types[m.get('msg_type_name', 'UNKNOWN')] += 1
     
     # Calculate update rate (updates per second per client)
-    # Based on snapshot_id range over time (snapshot_id increments each server tick)
+    # Method: Use inter-packet timing for each client, then average
+    # This gives the actual server tick rate as experienced by clients
     update_rate = 0
     unique_clients = set(m.get('client_id', 0) for m in metrics)
+    client_rates = []
     
     for client_id in unique_clients:
-        client_metrics = [m for m in metrics if m.get('client_id') == client_id]
-        if len(client_metrics) >= 2:
-            # Sort by recv_time
-            sorted_metrics = sorted(client_metrics, key=lambda x: x.get('recv_time_ms', 0))
+        # Get update packets for this client (HEARTBEAT, DELTA, FULL)
+        client_updates = [m for m in metrics 
+                         if m.get('client_id') == client_id 
+                         and m.get('msg_type_name') in ('HEARTBEAT', 'DELTA', 'FULL')]
+        
+        if len(client_updates) >= 10:  # Need enough packets
+            # Sort by receive time
+            sorted_updates = sorted(client_updates, key=lambda x: x.get('recv_time_ms', 0))
             
-            # Get time span in seconds (excluding first few packets for connection setup)
-            # Skip first 5% of packets to exclude connection overhead
-            skip_count = max(1, len(sorted_metrics) // 20)
-            if len(sorted_metrics) > skip_count + 1:
-                sorted_metrics = sorted_metrics[skip_count:]
+            # Skip first 10% to exclude connection setup
+            skip_count = max(1, len(sorted_updates) // 10)
+            sorted_updates = sorted_updates[skip_count:]
             
-            first_time = sorted_metrics[0].get('recv_time_ms', 0)
-            last_time = sorted_metrics[-1].get('recv_time_ms', 0)
-            time_span_sec = (last_time - first_time) / 1000.0
-            
-            if time_span_sec > 0:
-                # Get snapshot_id range (each increment = one server tick at 20 Hz)
-                snapshot_ids = [m.get('snapshot_id', 0) for m in sorted_metrics 
-                               if isinstance(m.get('snapshot_id'), (int, float))]
-                if snapshot_ids:
-                    min_snap = min(snapshot_ids)
-                    max_snap = max(snapshot_ids)
-                    snapshot_range = max_snap - min_snap
-                    if snapshot_range > 0:
-                        client_update_rate = snapshot_range / time_span_sec
-                        update_rate = max(update_rate, client_update_rate)
+            if len(sorted_updates) >= 2:
+                # Calculate inter-packet times
+                times = [m.get('recv_time_ms', 0) for m in sorted_updates]
+                diffs = [times[i+1] - times[i] for i in range(len(times)-1)]
+                
+                # Filter out outliers (gaps > 500ms indicate game pause or issue)
+                valid_diffs = [d for d in diffs if 0 < d < 500]
+                
+                if valid_diffs:
+                    avg_interval_ms = sum(valid_diffs) / len(valid_diffs)
+                    if avg_interval_ms > 0:
+                        client_rate = 1000.0 / avg_interval_ms
+                        client_rates.append(client_rate)
+    
+    if client_rates:
+        update_rate = sum(client_rates) / len(client_rates)
     
     # Calculate critical event delivery rate (packets delivered within 200ms)
     # Critical events are DELTA and FULL messages (game state changes)
