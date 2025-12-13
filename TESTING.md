@@ -8,13 +8,19 @@ This document describes the test automation system for Grid Clash, implementing 
 
 ```bash
 # Make scripts executable
-chmod +x run_all_tests.sh netem_apply.sh netem_clear.sh netem_status.sh
+chmod +x run_all_tests.sh netem_apply.sh netem_clear.sh netem_status.sh cleanup.sh
 
 # Run all tests (requires sudo for netem)
 sudo ./run_all_tests.sh lo 2 30
 
 # Analyze results and generate plots
 python3 analyze_metrics.py --results-dir results --plots-dir plots
+
+# Clean all test artifacts (logs, pcaps, results, plots, server_metrics)
+./cleanup.sh
+
+# Preview what would be deleted without actually deleting
+./cleanup.sh --dry-run
 ```
 
 ## Test Scenarios (Section 4.1)

@@ -64,6 +64,26 @@ def load_csv(filepath):
     return metrics
 
 
+def get_scenario_order(name):
+    """Return a sort key to order scenarios: baseline, loss_2, loss_5, delay."""
+    name_lower = name.lower()
+    if 'baseline' in name_lower:
+        return 0
+    elif 'loss_2' in name_lower or '2pct' in name_lower:
+        return 1
+    elif 'loss_5' in name_lower or '5pct' in name_lower:
+        return 2
+    elif 'delay' in name_lower:
+        return 3
+    else:
+        return 4
+
+
+def sort_scenarios(scenario_names):
+    """Sort scenario names in the correct order: baseline, 2% loss, 5% loss, 100ms delay."""
+    return sorted(scenario_names, key=get_scenario_order)
+
+
 def calculate_statistics(values):
     """Calculate mean, median, and 95th percentile."""
     if not values:
@@ -162,7 +182,11 @@ def generate_report(scenarios, output_file):
     lines.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     lines.append("")
     
-    for name, analysis in scenarios.items():
+    # Sort scenarios in correct order
+    sorted_names = sort_scenarios(scenarios.keys())
+    
+    for name in sorted_names:
+        analysis = scenarios[name]
         lines.append("-" * 70)
         lines.append(f"SCENARIO: {name}")
         lines.append("-" * 70)
@@ -231,7 +255,11 @@ def generate_comparison_csv(scenarios, output_file):
     """Generate a CSV comparing all scenarios."""
     rows = []
     
-    for name, analysis in scenarios.items():
+    # Sort scenarios in correct order
+    sorted_names = sort_scenarios(scenarios.keys())
+    
+    for name in sorted_names:
+        analysis = scenarios[name]
         row = {
             'scenario': name,
             'total_packets': analysis['total_packets'],
@@ -268,7 +296,7 @@ def generate_plots(scenarios, raw_metrics, plots_dir):
     
     os.makedirs(plots_dir, exist_ok=True)
     
-    scenario_names = list(scenarios.keys())
+    scenario_names = sort_scenarios(scenarios.keys())
     
     # 1. Latency Comparison Bar Chart
     fig, ax = plt.subplots(figsize=(10, 6))
@@ -411,6 +439,207 @@ def generate_plots(scenarios, raw_metrics, plots_dir):
     print(f"[INFO] Plots saved to {plots_dir}")
 
 
+def generate_acceptance_criteria_summary(scenarios, plots_dir):
+    """Generate a summary plot showing all scenarios with their acceptance criteria status."""
+    if not HAS_MATPLOTLIB:
+        print("[WARN] Skipping acceptance criteria summary (matplotlib not installed)")
+        return
+    
+    os.makedirs(plots_dir, exist_ok=True)
+    
+    # Collect all criteria results
+    all_criteria = []
+    for name, analysis in scenarios.items():
+        criteria = check_acceptance_criteria(name, analysis)
+        for criterion, passed, value in criteria:
+            all_criteria.append({
+                'scenario': name,
+                'criterion': criterion,
+                'passed': passed,
+                'value': value,
+                'analysis': analysis
+            })
+    
+    if not all_criteria:
+        print("[WARN] No acceptance criteria to display")
+        return
+    
+    # Create the summary figure with multiple subplots
+    fig = plt.figure(figsize=(16, 12))
+    
+    # ==================== SUBPLOT 1: Criteria Pass/Fail Matrix ====================
+    ax1 = fig.add_subplot(2, 2, 1)
+    
+    scenario_names = sort_scenarios(scenarios.keys())
+    criteria_by_scenario = {}
+    
+    for name in scenario_names:
+        criteria_by_scenario[name] = check_acceptance_criteria(name, scenarios[name])
+    
+    # Create matrix data
+    rows = []
+    row_labels = []
+    
+    for name in scenario_names:
+        criteria = criteria_by_scenario[name]
+        short_name = name.split('_')[-1] if '_' in name else name
+        short_name = short_name.replace('baseline', 'Baseline').replace('loss', 'Loss ').replace('pct', '%').replace('delay', 'Delay ')
+        
+        for crit_name, passed, value in criteria:
+            rows.append([1 if passed else 0])
+            row_labels.append(f"{short_name}\n{crit_name}")
+    
+    if rows:
+        colors = ['#ff6b6b' if r[0] == 0 else '#51cf66' for r in rows]
+        y_pos = range(len(rows))
+        bars = ax1.barh(y_pos, [1] * len(rows), color=colors, edgecolor='black', linewidth=0.5)
+        ax1.set_yticks(y_pos)
+        ax1.set_yticklabels(row_labels, fontsize=8)
+        ax1.set_xlim(0, 1.5)
+        ax1.set_xlabel('')
+        ax1.set_title('Acceptance Criteria Results', fontsize=12, fontweight='bold')
+        ax1.set_xticks([])
+        
+        # Add pass/fail labels
+        for i, (r, label) in enumerate(zip(rows, row_labels)):
+            status = 'PASS ✓' if r[0] == 1 else 'FAIL ✗'
+            ax1.text(1.1, i, status, va='center', fontsize=9, 
+                    color='green' if r[0] == 1 else 'red', fontweight='bold')
+    
+    ax1.invert_yaxis()
+    
+    # ==================== SUBPLOT 2: Key Metrics Bar Chart ====================
+    ax2 = fig.add_subplot(2, 2, 2)
+    
+    # Short scenario names
+    short_names = []
+    for name in scenario_names:
+        if 'baseline' in name.lower():
+            short_names.append('Baseline')
+        elif 'loss_2' in name.lower():
+            short_names.append('Loss 2%')
+        elif 'loss_5' in name.lower():
+            short_names.append('Loss 5%')
+        elif 'delay' in name.lower():
+            short_names.append('Delay 100ms')
+        else:
+            short_names.append(name.split('_')[-1])
+    
+    x = range(len(scenario_names))
+    width = 0.2
+    
+    latencies = [scenarios[s]['latency']['mean'] for s in scenario_names]
+    jitters = [scenarios[s]['jitter']['mean'] for s in scenario_names]
+    cpu = [scenarios[s]['cpu']['mean'] for s in scenario_names]
+    
+    ax2.bar([i - width for i in x], latencies, width, label='Latency (ms)', color='steelblue')
+    ax2.bar(x, jitters, width, label='Jitter (ms)', color='coral')
+    ax2.bar([i + width for i in x], cpu, width, label='CPU (%)', color='mediumpurple')
+    
+    ax2.set_xlabel('Scenario')
+    ax2.set_ylabel('Value')
+    ax2.set_title('Key Metrics Summary', fontsize=12, fontweight='bold')
+    ax2.set_xticks(x)
+    ax2.set_xticklabels(short_names, fontsize=9)
+    ax2.legend(loc='upper right')
+    ax2.grid(True, alpha=0.3)
+    
+    # Add threshold lines
+    ax2.axhline(y=50, color='steelblue', linestyle='--', alpha=0.5, linewidth=1)
+    ax2.axhline(y=60, color='mediumpurple', linestyle='--', alpha=0.5, linewidth=1)
+    
+    # ==================== SUBPLOT 3: Position Error with Thresholds ====================
+    ax3 = fig.add_subplot(2, 2, 3)
+    
+    means = [scenarios[s]['position_error']['mean'] for s in scenario_names]
+    p95s = [scenarios[s]['position_error']['p95'] for s in scenario_names]
+    
+    width = 0.35
+    ax3.bar([i - width/2 for i in x], means, width, label='Mean', color='seagreen')
+    ax3.bar([i + width/2 for i in x], p95s, width, label='P95', color='darkgreen')
+    
+    ax3.axhline(y=0.5, color='red', linestyle='--', linewidth=2, label='Mean Threshold (0.5)')
+    ax3.axhline(y=1.5, color='darkred', linestyle='--', linewidth=2, label='P95 Threshold (1.5)')
+    
+    ax3.set_xlabel('Scenario')
+    ax3.set_ylabel('Position Error (units)')
+    ax3.set_title('Position Error vs Thresholds', fontsize=12, fontweight='bold')
+    ax3.set_xticks(x)
+    ax3.set_xticklabels(short_names, fontsize=9)
+    ax3.legend(loc='upper right', fontsize=8)
+    ax3.grid(True, alpha=0.3)
+    
+    # ==================== SUBPLOT 4: Summary Statistics Table ====================
+    ax4 = fig.add_subplot(2, 2, 4)
+    ax4.axis('off')
+    
+    # Create summary table
+    table_data = []
+    headers = ['Scenario', 'Packets', 'Latency\n(mean)', 'Jitter\n(mean)', 'Pos Error\n(mean)', 'CPU\n(mean)', 'Status']
+    
+    for name in scenario_names:
+        analysis = scenarios[name]
+        criteria = check_acceptance_criteria(name, analysis)
+        all_passed = all(passed for _, passed, _ in criteria) if criteria else True
+        status = '✓ PASS' if all_passed else '✗ FAIL'
+        
+        if 'baseline' in name.lower():
+            short = 'Baseline'
+        elif 'loss_2' in name.lower():
+            short = 'Loss 2%'
+        elif 'loss_5' in name.lower():
+            short = 'Loss 5%'
+        elif 'delay' in name.lower():
+            short = 'Delay 100ms'
+        else:
+            short = name.split('_')[-1]
+        
+        table_data.append([
+            short,
+            f"{analysis['total_packets']}",
+            f"{analysis['latency']['mean']:.1f}",
+            f"{analysis['jitter']['mean']:.2f}",
+            f"{analysis['position_error']['mean']:.4f}",
+            f"{analysis['cpu']['mean']:.1f}%",
+            status
+        ])
+    
+    table = ax4.table(
+        cellText=table_data,
+        colLabels=headers,
+        loc='center',
+        cellLoc='center',
+        colWidths=[0.15, 0.1, 0.12, 0.12, 0.14, 0.1, 0.12]
+    )
+    table.auto_set_font_size(False)
+    table.set_fontsize(9)
+    table.scale(1.2, 1.8)
+    
+    # Color the status column
+    for i, row in enumerate(table_data):
+        cell = table[(i + 1, 6)]  # +1 for header row
+        if '✓' in row[6]:
+            cell.set_facecolor('#d4edda')
+        else:
+            cell.set_facecolor('#f8d7da')
+    
+    # Header styling
+    for j, header in enumerate(headers):
+        table[(0, j)].set_facecolor('#4a90d9')
+        table[(0, j)].set_text_props(color='white', fontweight='bold')
+    
+    ax4.set_title('Test Results Summary', fontsize=12, fontweight='bold', pad=20)
+    
+    # Overall title
+    fig.suptitle('Grid Clash - Test Scenarios Summary', fontsize=14, fontweight='bold', y=0.98)
+    
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    plt.savefig(os.path.join(plots_dir, 'test_summary.png'), dpi=150, bbox_inches='tight')
+    plt.close()
+    
+    print(f"[INFO] Test summary plot saved to {plots_dir}/test_summary.png")
+
+
 def find_result_files(results_dir, timestamp=None):
     """Find all result files, optionally filtered by timestamp."""
     result_files = {}
@@ -495,6 +724,9 @@ def main():
     
     # Plots
     generate_plots(scenarios, raw_metrics, args.plots_dir)
+    
+    # Summary plot with acceptance criteria
+    generate_acceptance_criteria_summary(scenarios, args.plots_dir)
     
     print(f"\n[SUCCESS] Analysis complete!")
     print(f"  Report: {report_file}")
