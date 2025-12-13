@@ -27,9 +27,9 @@ python3 analyze_metrics.py --results-dir results --plots-dir plots
 
 | Scenario | netem Command | Acceptance Criteria |
 |----------|---------------|---------------------|
-| Baseline | None | Avg latency ≤ 50 ms; Avg CPU < 60% |
+| Baseline | None | Avg latency ≤ 50 ms; Avg CPU < 60%; Update rate ≥ 20 Hz |
 | Loss 2% (LAN-like) | `netem loss 2%` | Mean position error ≤ 0.5 units; P95 ≤ 1.5 units |
-| Loss 5% (WAN-like) | `netem loss 5%` | Critical events ≥99% delivered within 200 ms |
+| Loss 5% (WAN-like) | `netem loss 5%` | Critical events ≥99% delivered within 200 ms; System stable |
 | Delay 100ms | `netem delay 100ms` | Clients continue functioning |
 
 ## Files Created

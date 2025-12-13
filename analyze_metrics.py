@@ -124,6 +124,52 @@ def analyze_scenario(metrics):
     for m in metrics:
         msg_types[m.get('msg_type_name', 'UNKNOWN')] += 1
     
+    # Calculate update rate (updates per second per client)
+    # Based on snapshot_id range over time (snapshot_id increments each server tick)
+    update_rate = 0
+    unique_clients = set(m.get('client_id', 0) for m in metrics)
+    
+    for client_id in unique_clients:
+        client_metrics = [m for m in metrics if m.get('client_id') == client_id]
+        if len(client_metrics) >= 2:
+            # Sort by recv_time
+            sorted_metrics = sorted(client_metrics, key=lambda x: x.get('recv_time_ms', 0))
+            
+            # Get time span in seconds (excluding first few packets for connection setup)
+            # Skip first 5% of packets to exclude connection overhead
+            skip_count = max(1, len(sorted_metrics) // 20)
+            if len(sorted_metrics) > skip_count + 1:
+                sorted_metrics = sorted_metrics[skip_count:]
+            
+            first_time = sorted_metrics[0].get('recv_time_ms', 0)
+            last_time = sorted_metrics[-1].get('recv_time_ms', 0)
+            time_span_sec = (last_time - first_time) / 1000.0
+            
+            if time_span_sec > 0:
+                # Get snapshot_id range (each increment = one server tick at 20 Hz)
+                snapshot_ids = [m.get('snapshot_id', 0) for m in sorted_metrics 
+                               if isinstance(m.get('snapshot_id'), (int, float))]
+                if snapshot_ids:
+                    min_snap = min(snapshot_ids)
+                    max_snap = max(snapshot_ids)
+                    snapshot_range = max_snap - min_snap
+                    if snapshot_range > 0:
+                        client_update_rate = snapshot_range / time_span_sec
+                        update_rate = max(update_rate, client_update_rate)
+    
+    # Calculate critical event delivery rate (packets delivered within 200ms)
+    # Critical events are DELTA and FULL messages (game state changes)
+    critical_events = [m for m in metrics 
+                       if m.get('msg_type_name') in ('DELTA', 'FULL')]
+    critical_within_200ms = [m for m in critical_events 
+                             if isinstance(m.get('latency_ms'), (int, float)) 
+                             and m['latency_ms'] <= 200]
+    
+    if critical_events:
+        critical_delivery_rate = (len(critical_within_200ms) / len(critical_events)) * 100
+    else:
+        critical_delivery_rate = 100.0  # No critical events = 100% delivered
+    
     return {
         'latency': calculate_statistics(latencies),
         'jitter': calculate_statistics(jitters),
@@ -132,7 +178,11 @@ def analyze_scenario(metrics):
         'bandwidth': calculate_statistics(bandwidth),
         'total_packets': len(metrics),
         'message_types': dict(msg_types),
-        'unique_clients': len(set(m.get('client_id', 0) for m in metrics))
+        'unique_clients': len(unique_clients),
+        'update_rate': update_rate,
+        'critical_events_total': len(critical_events),
+        'critical_events_within_200ms': len(critical_within_200ms),
+        'critical_delivery_rate': critical_delivery_rate
     }
 
 
@@ -141,13 +191,16 @@ def check_acceptance_criteria(scenario_name, analysis):
     results = []
     
     if 'baseline' in scenario_name.lower():
-        # Baseline: avg latency ≤ 50 ms; avg CPU < 60%
+        # Baseline: avg latency ≤ 50 ms; avg CPU < 60%; update rate ≥ 20 Hz
         latency_ok = analysis['latency']['mean'] <= 50
         cpu_ok = analysis['cpu']['mean'] < 60
+        update_rate_ok = analysis.get('update_rate', 0) >= 20
         results.append(('Avg Latency ≤ 50ms', latency_ok, 
                        f"{analysis['latency']['mean']:.2f}ms"))
         results.append(('Avg CPU < 60%', cpu_ok, 
                        f"{analysis['cpu']['mean']:.2f}%"))
+        results.append(('Update Rate ≥ 20 Hz', update_rate_ok,
+                       f"{analysis.get('update_rate', 0):.1f} Hz"))
         
     elif 'loss_2' in scenario_name.lower() or '2%' in scenario_name:
         # Loss 2%: Mean position error ≤ 0.5 units; 95th ≤ 1.5 units
@@ -159,10 +212,15 @@ def check_acceptance_criteria(scenario_name, analysis):
                        f"{analysis['position_error']['p95']:.4f}"))
         
     elif 'loss_5' in scenario_name.lower() or '5%' in scenario_name:
-        # Loss 5%: System remains stable (no crashes, reasonable latency)
+        # Loss 5%: Critical events ≥99% delivered within 200ms; system remains stable
+        critical_rate = analysis.get('critical_delivery_rate', 0)
+        critical_ok = critical_rate >= 99.0
         stable = analysis['total_packets'] > 0 and analysis['latency']['mean'] < 500
+        
+        results.append(('Critical Events ≥99% within 200ms', critical_ok,
+                       f"{critical_rate:.1f}% ({analysis.get('critical_events_within_200ms', 0)}/{analysis.get('critical_events_total', 0)})"))
         results.append(('System Stable', stable,
-                       f"{analysis['total_packets']} packets"))
+                       f"{analysis['total_packets']} packets, {analysis['latency']['mean']:.1f}ms avg latency"))
         
     elif 'delay' in scenario_name.lower():
         # Delay 100ms: Clients continue functioning
@@ -230,6 +288,16 @@ def generate_report(scenarios, output_file):
         lines.append(f"  Mean:   {analysis['bandwidth']['mean']:.2f}")
         lines.append("")
         
+        lines.append("UPDATE RATE (Hz per client):")
+        lines.append(f"  Rate:   {analysis.get('update_rate', 0):.1f}")
+        lines.append("")
+        
+        lines.append("CRITICAL EVENT DELIVERY:")
+        lines.append(f"  Total Critical Events:  {analysis.get('critical_events_total', 0)}")
+        lines.append(f"  Delivered ≤200ms:       {analysis.get('critical_events_within_200ms', 0)}")
+        lines.append(f"  Delivery Rate:          {analysis.get('critical_delivery_rate', 0):.1f}%")
+        lines.append("")
+        
         # Acceptance criteria check
         criteria = check_acceptance_criteria(name, analysis)
         if criteria:
@@ -275,7 +343,9 @@ def generate_comparison_csv(scenarios, output_file):
             'position_error_p95': analysis['position_error']['p95'],
             'cpu_mean': analysis['cpu']['mean'],
             'cpu_max': analysis['cpu']['max'],
-            'bandwidth_mean': analysis['bandwidth']['mean']
+            'bandwidth_mean': analysis['bandwidth']['mean'],
+            'update_rate_hz': analysis.get('update_rate', 0),
+            'critical_delivery_rate_pct': analysis.get('critical_delivery_rate', 0)
         }
         rows.append(row)
     
