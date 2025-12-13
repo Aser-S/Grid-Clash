@@ -490,6 +490,12 @@ main() {
             --timestamp "$TIMESTAMP"
     fi
     
+    # Fix permissions so non-root user can access results
+    if [ -n "$SUDO_USER" ]; then
+        print_info "Fixing file permissions for user $SUDO_USER..."
+        chown -R "$SUDO_USER:$SUDO_USER" "$RESULTS_DIR" "$LOGS_DIR" "$PLOTS_DIR" "$PCAPS_DIR" "$SERVER_METRICS_DIR" 2>/dev/null || true
+    fi
+    
     print_header "ALL TESTS COMPLETED"
     print_info "Results: $RESULTS_DIR"
     print_info "Logs: $LOGS_DIR"
