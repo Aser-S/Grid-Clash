@@ -1,0 +1,13 @@
+[Client 2] Sent INIT
+[Client 2] Connected to server
+[Client 2] Running for 30 seconds...
+[Client 2] Game Over received
+[Client 2] Auto-play error: 0
+[CSV] Saved 237 metrics to /home/halofever/Grid_Clash/Grid-Clash/results/20251213_145901_baseline_client2.csv
+
+[Client 2] Test Summary:
+  Total packets: 237
+  Duration: 13.68 sec
+  Latency - Mean: 1.26 ms, Median: 1.00 ms, P95: 3.00 ms
+  Jitter - Mean: 2.22 ms, P95: 9.00 ms
+  Position Error - Mean: 0.0203, P95: 0.2000

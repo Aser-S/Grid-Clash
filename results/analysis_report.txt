@@ -1,168 +1,172 @@
 ======================================================================
 GRID CLASH - METRICS ANALYSIS REPORT
 ======================================================================
-Generated: 2025-12-13 13:48:55
+Generated: 2025-12-13 15:00:52
 
 ----------------------------------------------------------------------
-SCENARIO: 134408_delay_100ms
+SCENARIO: 145901_loss_5pct
 ----------------------------------------------------------------------
 
-Total Packets: 548
+Total Packets: 503
 Unique Clients: 2
 
 Message Types:
   ACK: 2
   FULL: 2
-  HEARTBEAT: 434
-  DELTA: 110
-
-LATENCY (ms):
-  Mean:   100.66
-  Median: 100.00
-  P95:    101.00
-  Min:    100.00
-  Max:    112.00
-
-JITTER (ms):
-  Mean:   1.77
-  Median: 1.00
-  P95:    7.00
-
-POSITION ERROR (units):
-  Mean:   0.0175
-  Median: 0.0000
-  P95:    0.2000
-
-CPU USAGE (%):
-  Mean:   0.00
-  Max:    0.00
-
-BANDWIDTH (kbps per client):
-  Mean:   7.15
-
-ACCEPTANCE CRITERIA:
-  [✓ PASS] Clients Functioning: 548 packets
-
-----------------------------------------------------------------------
-SCENARIO: 134408_loss_2pct
-----------------------------------------------------------------------
-
-Total Packets: 565
-Unique Clients: 2
-
-Message Types:
-  ACK: 2
-  FULL: 2
-  HEARTBEAT: 521
-  DELTA: 40
-
-LATENCY (ms):
-  Mean:   1.27
-  Median: 1.00
-  P95:    1.00
-  Min:    1.00
-  Max:    19.00
-
-JITTER (ms):
-  Mean:   3.56
-  Median: 1.00
-  P95:    25.00
-
-POSITION ERROR (units):
-  Mean:   0.0177
-  Median: 0.0000
-  P95:    0.2000
-
-CPU USAGE (%):
-  Mean:   0.00
-  Max:    0.00
-
-BANDWIDTH (kbps per client):
-  Mean:   5.15
-
-ACCEPTANCE CRITERIA:
-  [✓ PASS] Mean Position Error ≤ 0.5: 0.0177
-  [✓ PASS] P95 Position Error ≤ 1.5: 0.2000
-
-----------------------------------------------------------------------
-SCENARIO: 134408_baseline
-----------------------------------------------------------------------
-
-Total Packets: 540
-Unique Clients: 2
-
-Message Types:
-  ACK: 2
-  FULL: 2
-  HEARTBEAT: 490
+  HEARTBEAT: 451
   DELTA: 46
+  GAME_OVER: 2
 
 LATENCY (ms):
-  Mean:   1.24
+  Mean:   1.18
   Median: 1.00
-  P95:    1.00
+  P95:    2.00
   Min:    1.00
-  Max:    30.00
+  Max:    9.00
 
 JITTER (ms):
-  Mean:   1.25
+  Mean:   7.34
+  Median: 1.00
+  P95:    51.00
+
+POSITION ERROR (units):
+  Mean:   0.0195
+  Median: 0.0000
+  P95:    0.2000
+
+CPU USAGE (%):
+  Mean:   32.39
+  Max:    356.70
+
+BANDWIDTH (kbps per client):
+  Mean:   4.80
+
+ACCEPTANCE CRITERIA:
+  [✓ PASS] System Stable: 503 packets
+
+----------------------------------------------------------------------
+SCENARIO: 145901_baseline
+----------------------------------------------------------------------
+
+Total Packets: 494
+Unique Clients: 2
+
+Message Types:
+  ACK: 2
+  FULL: 2
+  HEARTBEAT: 447
+  DELTA: 41
+  GAME_OVER: 2
+
+LATENCY (ms):
+  Mean:   1.22
   Median: 1.00
   P95:    3.00
+  Min:    1.00
+  Max:    13.00
+
+JITTER (ms):
+  Mean:   2.18
+  Median: 1.00
+  P95:    9.00
 
 POSITION ERROR (units):
-  Mean:   0.0185
+  Mean:   0.0198
   Median: 0.0000
   P95:    0.2000
 
 CPU USAGE (%):
-  Mean:   0.00
-  Max:    0.00
+  Mean:   19.35
+  Max:    100.00
 
 BANDWIDTH (kbps per client):
-  Mean:   5.46
+  Mean:   7.44
 
 ACCEPTANCE CRITERIA:
-  [✓ PASS] Avg Latency ≤ 50ms: 1.24ms
-  [✓ PASS] Avg CPU < 60%: 0.00%
+  [✓ PASS] Avg Latency ≤ 50ms: 1.22ms
+  [✓ PASS] Avg CPU < 60%: 19.35%
 
 ----------------------------------------------------------------------
-SCENARIO: 134408_loss_5pct
+SCENARIO: 145901_delay_100ms
 ----------------------------------------------------------------------
 
-Total Packets: 555
+Total Packets: 547
 Unique Clients: 2
 
 Message Types:
   ACK: 2
   FULL: 2
-  HEARTBEAT: 514
-  DELTA: 37
+  HEARTBEAT: 431
+  DELTA: 110
+  GAME_OVER: 2
 
 LATENCY (ms):
-  Mean:   1.30
-  Median: 1.00
-  P95:    1.00
-  Min:    1.00
-  Max:    23.00
+  Mean:   100.87
+  Median: 101.00
+  P95:    102.00
+  Min:    100.00
+  Max:    115.00
 
 JITTER (ms):
-  Mean:   5.63
+  Mean:   2.16
   Median: 1.00
-  P95:    50.00
+  P95:    9.00
 
 POSITION ERROR (units):
-  Mean:   0.0180
+  Mean:   0.0176
   Median: 0.0000
   P95:    0.2000
 
 CPU USAGE (%):
-  Mean:   0.00
-  Max:    0.00
+  Mean:   7.41
+  Max:    952.00
 
 BANDWIDTH (kbps per client):
-  Mean:   5.13
+  Mean:   10.57
 
 ACCEPTANCE CRITERIA:
-  [✓ PASS] System Stable: 555 packets
+  [✓ PASS] Clients Functioning: 547 packets
+
+----------------------------------------------------------------------
+SCENARIO: 145901_loss_2pct
+----------------------------------------------------------------------
+
+Total Packets: 471
+Unique Clients: 2
+
+Message Types:
+  ACK: 2
+  FULL: 2
+  HEARTBEAT: 411
+  DELTA: 54
+  GAME_OVER: 2
+
+LATENCY (ms):
+  Mean:   1.81
+  Median: 1.00
+  P95:    4.00
+  Min:    1.00
+  Max:    36.00
+
+JITTER (ms):
+  Mean:   7.20
+  Median: 2.00
+  P95:    51.00
+
+POSITION ERROR (units):
+  Mean:   0.0208
+  Median: 0.0000
+  P95:    0.2000
+
+CPU USAGE (%):
+  Mean:   34.80
+  Max:    352.40
+
+BANDWIDTH (kbps per client):
+  Mean:   5.74
+
+ACCEPTANCE CRITERIA:
+  [✓ PASS] Mean Position Error ≤ 0.5: 0.0208
+  [✓ PASS] P95 Position Error ≤ 1.5: 0.2000
 
 ======================================================================
