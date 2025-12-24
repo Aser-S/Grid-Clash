@@ -6,29 +6,6 @@ import json
 import pygame
 import sys
 
-# ======================================
-# GRID CLASH PROTOCOL CLIENT - PACKET LOSS SIMULATION
-# ======================================
-# 
-# ENHANCEMENTS IMPLEMENTED:
-# ✓ Game over screen with leaderboard display
-# ✓ Proper ACK handling with snapshot_id and sequence numbers
-# ✓ Enhanced packet loss simulation (30% burst loss every 10 packets)
-# ✓ Smooth animations and visual feedback
-# ✓ ESC key to exit after game over
-# ✓ Gradient animation recovery (no more "teleport-y" retransmission)
-# ✓ Adaptive animation speed based on packet loss detection
-# 
-# FEATURES:
-# - Pygame-based visual grid interface
-# - Smooth color transitions and pulse effects
-# - Packet loss simulation for testing
-# - Real-time game state synchronization
-# - Interactive cell acquisition with mouse clicks
-# ======================================
-
-
-
 # ===================== CONFIGURATION =====================
 serverName = 'localhost'
 serverPort = 12000
@@ -42,7 +19,7 @@ running = True
 # ===================== PYGAME SETUP =====================
 pygame.init()
 WAIT_TIMEOUT= 5
-GRID_SIZE = 5
+GRID_SIZE = 10
 CELL_SIZE = 40
 GRID_PADDING = 50
 WINDOW_WIDTH = CELL_SIZE * GRID_SIZE + 2 * GRID_PADDING
@@ -78,20 +55,13 @@ previous_cell_owner = [[0 for _ in range(GRID_SIZE)] for _ in range(GRID_SIZE)]
 player_id = None
 status_message = "Connecting to server..."
 connected = False
-game_over = False
-leaderboard_data = None
 
 # Animation state
 cell_animations = {}  # {(r, c): {'progress': 0.0, 'from_color': ..., 'to_color': ...}}
 pulse_effect = {}     # {(r, c): pulse_frame} for newly captured cells
 hover_cell = (None, None)
-ANIMATION_DURATION = 0.5  # seconds for color transition (slower for smoother recovery)
+ANIMATION_DURATION = 0.3  # seconds for color transition
 PULSE_DURATION = 0.5      # seconds for pulse effect
-
-# Packet loss recovery state
-snapshot_buffer = []  # Store recent snapshots for interpolation
-last_received_time = time.time()
-expected_interval = 0.05  # 50ms between snapshots (20Hz)
 
 # ===================== NETWORKING =====================
 
@@ -164,99 +134,53 @@ def on_cell_click(r, c):
 
 def listen_for_snapshots():
     """Continuously listens for incoming snapshots and updates grid."""
-    global cell_owner, previous_cell_owner, status_message, connected, game_over, leaderboard_data
-    
+    global cell_owner, previous_cell_owner, status_message, connected
     while running:
         try:
             data, serverAddress = clientSocket.recvfrom(1200)
             header = struct.unpack(HEADER_FORMAT, data[:HEADER_SIZE])
             protocol_id, version, msg_type, snapshot_id, seq_num, timestamp, payload_len = header
-            
-            # Handle packet loss simulation for DELTA snapshots
-            if msg_type == 4:
-                global COUNTER
-                COUNTER += 1
-                loss_cycle = COUNTER % 10
-                if 1 <= loss_cycle <= 3:  # Drop 3 consecutive deltas
-                    print(f"[SIMULATED LOSS] Dropped DELTA snapshot ({loss_cycle}/3)")
-                    continue
-            
-            # Handle game snapshots (FULL / DELTA / HEARTBEAT)
-            if msg_type in (3, 4, 5):
-                # Update last received time for packet loss detection
-                global last_received_time
-                current_time = time.time()
-                time_since_last = current_time - last_received_time
-                last_received_time = current_time
-                
+            # if msg_type == 4:
+            #     # Simulate packet loss for DELTA snapshots (3 consecutive every 10)
+            #     global COUNTER
+            #     COUNTER += 1
+            #     loss_cycle = COUNTER % 10
+            #     if 1 <= loss_cycle <= 3:  # Drop 3 consecutive deltas
+            #         print(f"[SIMULATED LOSS] Dropped DELTA snapshot ({loss_cycle}/3)")
+            #         continue
+            if msg_type in (3, 4, 5):  # FULL / DELTA / HEARTBEAT
                 snapshot_data = data[HEADER_SIZE:HEADER_SIZE + payload_len]
                 try:
-                    grid = json.loads(snapshot_data.decode()) if payload_len > 0 else []
+                    grid = json.loads(snapshot_data.decode())
                 except Exception:
                     grid = []
-                    
                 if grid:
-                    # Add to snapshot buffer for interpolation
-                    snapshot_buffer.append({
-                        'timestamp': current_time,
-                        'grid': [row[:] for row in grid],  # Deep copy
-                        'snapshot_id': snapshot_id
-                    })
-                    
-                    # Keep only last 3 snapshots
-                    if len(snapshot_buffer) > 3:
-                        snapshot_buffer.pop(0)
-                    
-                    # Detect if we missed packets (gap > 1.5x expected interval)
-                    missed_packets = time_since_last > (expected_interval * 1.5)
-                    
-                    # Detect cell changes and trigger smooth animations
+                    # Detect cell changes and trigger animations
                     for r in range(len(grid)):
                         for c in range(len(grid[r])):
                             if grid[r][c] != previous_cell_owner[r][c]:
                                 # Cell owner changed - start animation
                                 old_color = color_map.get(previous_cell_owner[r][c], COLOR_EMPTY)
                                 new_color = color_map.get(grid[r][c], COLOR_EMPTY)
-                                
-                                # Adjust animation speed based on packet loss
-                                animation_speed = ANIMATION_DURATION
-                                if missed_packets:
-                                    # Slower animation for smoother recovery from packet loss
-                                    animation_speed = ANIMATION_DURATION * 1.5
-                                    print(f"[RECOVERY] Smooth recovery animation for cell ({r},{c})")
-                                
                                 cell_animations[(r, c)] = {
                                     'progress': 0.0,
                                     'from_color': old_color,
                                     'to_color': new_color,
-                                    'start_time': current_time,
-                                    'duration': animation_speed
+                                    'start_time': time.time()
                                 }
-                                
                                 # Trigger pulse effect on newly captured cells
                                 if grid[r][c] != 0:
                                     pulse_effect[(r, c)] = 0.0
                     
-                    # Update game states
+                    # Update states
                     previous_cell_owner = [row[:] for row in grid]  # Deep copy
                     cell_owner = grid
                     status_message = "Connected! Playing..."
                     connected = True
-                
-                # Send ACK for all snapshot types
-                response = struct.pack(HEADER_FORMAT, b'DOMX', 1, 1, snapshot_id, seq_num, int(time.time() * 1000), 0)
-                clientSocket.sendto(response, serverAddress)
+                # send ACK
             
-            # Handle GAME_OVER message
-            elif msg_type == 6:
-                game_over_data = data[HEADER_SIZE:HEADER_SIZE + payload_len]
-                try:
-                    leaderboard_data = json.loads(game_over_data.decode())
-                    game_over = True
-                    status_message = "GAME OVER! Check leaderboard below."
-                    print("[GAME OVER] Received final leaderboard")
-                except Exception as e:
-                    print(f"[ERROR] Failed to parse game over data: {e}")
+                response = struct.pack(HEADER_FORMAT, b'DOMX', 1, 1, 0, 0, int(time.time() * 1000), 0)
+                clientSocket.sendto(response, serverAddress)
          
         except OSError:
             break
@@ -299,11 +223,10 @@ def draw_grid():
     """Draw the game grid with animations."""
     current_time = time.time()
     
-    # Update animation progress with variable duration
+    # Update animation progress
     for (r, c), anim in list(cell_animations.items()):
-        elapsed = current_time - anim['start_time']
-        duration = anim.get('duration', ANIMATION_DURATION)
-        anim['progress'] = elapsed / duration
+        elapsed = time.time() - anim['start_time']
+        anim['progress'] = elapsed / ANIMATION_DURATION
     
     # Update pulse effects
     for (r, c), frame in list(pulse_effect.items()):
@@ -339,47 +262,6 @@ def draw_legend():
     screen.blit(text_surface, (GRID_PADDING, legend_y))
 
 
-def draw_game_over_screen():
-    """Draw game over screen with leaderboard."""
-    if not leaderboard_data or not game_over:
-        return
-    
-    # Semi-transparent overlay
-    overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
-    overlay.set_alpha(200)
-    overlay.fill((0, 0, 0))
-    screen.blit(overlay, (0, 0))
-    
-    # Game Over title
-    title_text = font_large.render("GAME OVER", True, (255, 255, 255))
-    title_rect = title_text.get_rect(center=(WINDOW_WIDTH // 2, 100))
-    screen.blit(title_text, title_rect)
-    
-    # Leaderboard
-    leaderboard_title = font_small.render("Final Leaderboard:", True, (255, 255, 255))
-    leaderboard_rect = leaderboard_title.get_rect(center=(WINDOW_WIDTH // 2, 140))
-    screen.blit(leaderboard_title, leaderboard_rect)
-    
-    # Display each player's ranking
-    y_offset = 170
-    for entry in leaderboard_data.get("leaderboard", []):
-        rank = entry.get("rank", "?")
-        player_id = entry.get("player_id", "?")
-        color_name = entry.get("color", "Unknown")
-        score = entry.get("score", 0)
-        
-        rank_text = f"{rank}. Player #{player_id} ({color_name}): {score} cells"
-        rank_surface = font_small.render(rank_text, True, (255, 255, 255))
-        rank_rect = rank_surface.get_rect(center=(WINDOW_WIDTH // 2, y_offset))
-        screen.blit(rank_surface, rank_rect)
-        y_offset += 25
-    
-    # Instructions
-    instruction_text = font_small.render("Press ESC to close", True, (200, 200, 200))
-    instruction_rect = instruction_text.get_rect(center=(WINDOW_WIDTH // 2, y_offset + 30))
-    screen.blit(instruction_text, instruction_rect)
-
-
 # ===================== MAIN LOOP =====================
 
 def main():
@@ -400,11 +282,8 @@ def main():
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
-            elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE and game_over:
-                    running = False
-            elif event.type == pygame.MOUSEBUTTONDOWN and not game_over:
-                if event.button == 1:  # Left click (only when game is active)
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                if event.button == 1:  # Left click
                     mouse_x, mouse_y = event.pos
                     grid_row, grid_col = screen_to_grid(mouse_x, mouse_y)
                     if grid_row is not None and grid_col is not None:
@@ -415,11 +294,6 @@ def main():
         draw_grid()
         draw_status_bar()
         draw_legend()
-        
-        # Draw game over screen if game has ended
-        if game_over:
-            draw_game_over_screen()
-        
         pygame.display.flip()
     
     # Cleanup
